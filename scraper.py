@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import requests
 import csv
+import sympy
 import pandas as pd
 from bs4 import BeautifulSoup
 
@@ -185,11 +186,17 @@ net2 = nn.Sequential(
     )
 
 net3 = nn.Sequential(
-    nn.Linear(7*X_data_size, hidden_size),
+    nn.Linear(43, hidden_size*2),
     nn.PReLU(),
     nn.Dropout(0.3),
-    nn.Linear(hidden_size, hidden_size),
-    nn.PReLU(),
+    nn.Linear(hidden_size*2, hidden_size*2),
+    nn.ReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(hidden_size*2, hidden_size*2),
+    nn.ReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(hidden_size*2, hidden_size),
+    nn.ReLU(),
     nn.Dropout(0.3),
     nn.Linear(hidden_size, hidden_size),
     nn.PReLU(),
@@ -198,19 +205,34 @@ net3 = nn.Sequential(
     nn.ReLU(),
     nn.Linear(hidden_size, X_data_size*20),
     nn.PReLU(),
-    nn.Linear(X_data_size*20, 100),
+    nn.Linear(X_data_size*20, X_data_size*20),
+    nn.PReLU(),
+    nn.Linear(X_data_size*20, X_data_size*2),
+    nn.ReLU(),
+    nn.Linear(X_data_size*2, 100),
     nn.ReLU(),
     nn.Linear(100, 43),
-    nn.ReLU(),
-    nn.Linear(43, 7),
-    nn.ReLU(),
+    nn.Sigmoid(),
+    nn.Linear(43, 43),
+    nn.Sigmoid()
     )
+
+waru =50
+
+def x_data(x, i, size):
+
+    hoge = np.zeros(x.shape[1], dtype="float32")
+    for j in range(size):
+        prime = sympy.prime(j+1)
+        hoge += np.array(x[i+j], dtype="float32")*(j+1)
+    return torch.tensor(hoge)
+    
 
 def yosou(net, X, Y):
     print("yosou -> call")
-    X = X.to("cuda:0")
-    Y = Y.to("cuda:0")
-    net = net.to("cuda:0")
+    #X = X.to("cuda:0")
+    #Y = Y.to("cuda:0")
+    #net = net.to("cuda:0")
 
 
     loss_fn = nn.MSELoss()
@@ -220,24 +242,30 @@ def yosou(net, X, Y):
 
     losses = []
     for i in range(10):
+        print("epoch: "+str(i))
         net.eval()
-    
-        y_pred = net(X[i:i+X_data_size].reshape(-1))
+        in_data = (x_data(X, i, X_data_size)).clone().detach().requires_grad_(True)
+        y_pred = net(in_data/waru)
+        #y_pred = net(X[i:i+X_data_size].reshape(-1))
         loss = torch.mean((Y[i+X_data_size+1].reshape(-1) - y_pred.reshape(-1))**2)
         #loss = loss_fn( Y[i*2+X_data_size+1], y_pred.min(1)[0])
         losses.append(loss.item())
     
         net.train()
         for epoch in range(len(X)-X_data_size):
-
             optimizer.zero_grad()
+            
+            in_data = (x_data(X, epoch, X_data_size)).clone().detach().requires_grad_(True)
+            y_pred = net(in_data/waru)
         
-            y_pred = net(X[epoch:epoch+X_data_size].reshape(-1))
+            #y_pred = net(X[epoch:epoch+X_data_size].reshape(-1))
             loss = torch.mean((Y[epoch+X_data_size].reshape(-1) - y_pred.reshape(-1))**2)
             #loss = loss_fn(Y[epoch+X_data_size+1], y_pred.min(1)[0])
             loss.backward()
             losses.append(loss.item())
             optimizer.step()
+            
+            print("status "+ str(epoch)+ "/"+str(len(X)-X_data_size)+": "+str(loss.item()))
     
         
         net.eval()
@@ -248,7 +276,11 @@ def yosou(net, X, Y):
 
 
     epoch+=1
-    y_pred = net(X[epoch:epoch+X_data_size].reshape(-1))
+    
+    in_data = x_data(X, epoch, X_data_size)
+    y_pred = net(in_data/waru)
+    
+    #y_pred = net(X[epoch:epoch+X_data_size].reshape(-1))
     data = y_pred.to("cpu").detach().numpy()
     print(data)
     yosou = []
@@ -265,7 +297,7 @@ yosou_list = []
 
 for i in range(1):
     print(str(i)+"回")
-    yosou_list.append(yosou(net2, X, Y))
+    yosou_list.append(yosou(net3, X, Y))
 
 yosou_list=np.array(yosou_list)
 hoge= np.unique(yosou_list, return_counts=True)
