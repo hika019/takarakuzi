@@ -4,6 +4,7 @@ import csv
 import sympy
 import pandas as pd
 from bs4 import BeautifulSoup
+import time
 
 import numpy as np
 import torch
@@ -108,8 +109,10 @@ def data_init():
 
 data= data_init()
 
-X_data_size = 80
-hidden_size = X_data_size*100
+gakusyuu = 800
+
+X_data_size = 50
+hidden_size = X_data_size*70
 
 
 X = torch.tensor(data, dtype=torch.float32)
@@ -150,39 +153,53 @@ net = nn.Sequential(
 net2 = nn.Sequential(
     nn.Linear(43*X_data_size, hidden_size),
     nn.ReLU(),
+    nn.Linear(hidden_size, X_data_size*100),
+    nn.ReLU(),
+    
+    nn.Dropout(0.3),
+    nn.Linear(X_data_size*100, X_data_size*100),
+    nn.ReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(X_data_size*100, X_data_size*200),
+    nn.ReLU(),
+    nn.Linear(X_data_size*200, X_data_size*200),
+    nn.ReLU(),
+    nn.Linear(X_data_size*200, X_data_size*200),
+    nn.ReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(X_data_size*200, X_data_size*100),
+    nn.ReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(X_data_size*100, X_data_size*100),
+    nn.ReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(X_data_size*100, hidden_size),
+    nn.Softsign(),
+    
+    
+    nn.Dropout(0.3),
+    nn.Linear(hidden_size, hidden_size),
+    nn.PReLU(),
+    nn.Dropout(0.3),
     nn.Linear(hidden_size, hidden_size),
     nn.ReLU(),
     nn.Dropout(0.3),
     nn.Linear(hidden_size, hidden_size),
+    nn.ReLU(),
     nn.Dropout(0.3),
-    nn.Linear(hidden_size, hidden_size),
-    nn.Dropout(0.3),
-    nn.Linear(hidden_size, hidden_size),
-    nn.PReLU(),
-    nn.Dropout(0.3),
-    nn.Linear(hidden_size, hidden_size),
-    nn.Tanhshrink(),
     nn.Linear(hidden_size, 300),
     nn.Tanh(),
-    nn.Dropout(0.3),
-    nn.Linear(300, 300),
-    nn.PReLU(),
-    nn.Dropout(0.2),
-    nn.Linear(300, 300),
-    nn.PReLU(),
+    
     nn.Dropout(0.3),
     nn.Linear(300, 100),
     nn.Hardtanh(),
     nn.Dropout(0.3),
-    nn.Linear(100, 100),
-    nn.Softsign(),
-    nn.Linear(100, 100),
-    nn.PReLU(),
-    nn.Linear(100, 50),
-    nn.PReLU(),
+    nn.Linear(100, 80),
+    nn.ReLU(),
+    nn.Linear(80, 50),
+    nn.Tanh(),
     nn.Linear(50, 43),
-    nn.Softsign(),
-    nn.Sigmoid()
+    nn.Softmax()
     )
 
 net3 = nn.Sequential(
@@ -214,10 +231,11 @@ net3 = nn.Sequential(
     nn.Linear(100, 43),
     nn.Sigmoid(),
     nn.Linear(43, 43),
-    nn.Sigmoid()
+    nn.ReLU(),
+    nn.Softmax()
     )
 
-waru =50
+waru =1
 
 def x_data(x, i, size):
 
@@ -230,9 +248,9 @@ def x_data(x, i, size):
 
 def yosou(net, X, Y):
     print("yosou -> call")
-    #X = X.to("cuda:0")
-    #Y = Y.to("cuda:0")
-    #net = net.to("cuda:0")
+    X = X.to("cuda:0")
+    Y = Y.to("cuda:0")
+    net = net.to("cuda:0")
 
 
     loss_fn = nn.MSELoss()
@@ -241,46 +259,42 @@ def yosou(net, X, Y):
 
 
     losses = []
-    for i in range(10):
-        print("epoch: "+str(i))
-        net.eval()
-        in_data = (x_data(X, i, X_data_size)).clone().detach().requires_grad_(True)
-        y_pred = net(in_data/waru)
-        #y_pred = net(X[i:i+X_data_size].reshape(-1))
-        loss = torch.mean((Y[i+X_data_size+1].reshape(-1) - y_pred.reshape(-1))**2)
-        #loss = loss_fn( Y[i*2+X_data_size+1], y_pred.min(1)[0])
-        losses.append(loss.item())
+    net.train()
     
-        net.train()
+    for i in range(3):
         for epoch in range(len(X)-X_data_size):
+            start = time.time()
+            
             optimizer.zero_grad()
             
-            in_data = (x_data(X, epoch, X_data_size)).clone().detach().requires_grad_(True)
+            #in_data = (x_data(X, epoch, X_data_size)).clone().detach().requires_grad_(True)
+            in_data = X[epoch:epoch+X_data_size].reshape(-1)
+            
             y_pred = net(in_data/waru)
+            y_pred = y_pred*6
         
             #y_pred = net(X[epoch:epoch+X_data_size].reshape(-1))
-            loss = torch.mean((Y[epoch+X_data_size].reshape(-1) - y_pred.reshape(-1))**2)
-            #loss = loss_fn(Y[epoch+X_data_size+1], y_pred.min(1)[0])
+            #loss = torch.mean((Y[epoch+X_data_size].reshape(-1) - y_pred.reshape(-1))**2)
+            loss = loss_fn(Y[epoch+X_data_size].float(), y_pred/max(y_pred))
             loss.backward()
             losses.append(loss.item())
             optimizer.step()
-            
-            print("status "+ str(epoch)+ "/"+str(len(X)-X_data_size)+": "+str(loss.item()))
-    
-        
-        net.eval()
-        if(i%3 == 0):
-            print("end: "+str(i)+":"+str(loss.item()))
+            if(epoch%10 == 0):
+                print("step "+ str(epoch)+ "/"+str(len(X)-X_data_size)+": "+str(loss.item())+ "/ time: "+str(int(time.time()-start))+"s")
 
     plt.plot(losses)
 
 
-    epoch+=1
     
-    in_data = x_data(X, epoch, X_data_size)
+    #in_data = x_data(X, epoch, X_data_size)
+    in_data = X[-X_data_size:].reshape(-1)
+    
     y_pred = net(in_data/waru)
+    print(y_pred)
+    y_pred = y_pred*6
     
     #y_pred = net(X[epoch:epoch+X_data_size].reshape(-1))
+    #data = (y_pred/max(y_pred)).to("cpu").detach().numpy()
     data = y_pred.to("cpu").detach().numpy()
     print(data)
     yosou = []
@@ -295,9 +309,17 @@ def yosou(net, X, Y):
 yosou_list = []
 
 
+start = 0
+step = 1000
+
+
+
+#for i in range(int(len(X)/(step/2))):
 for i in range(1):
-    print(str(i)+"回")
-    yosou_list.append(yosou(net3, X, Y))
+    #print(str(i)+"/"+str(int(len(X)/(step/2)))+"回")
+    #yosou_list.append(yosou(net2, X[start:start+gakusyuu], Y[start:start+gakusyuu]))
+    yosou_list.append(yosou(net2, X, Y))
+    start +=int(step/2)
 
 yosou_list=np.array(yosou_list)
 hoge= np.unique(yosou_list, return_counts=True)
