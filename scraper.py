@@ -79,7 +79,7 @@ def create_csv():
         scraper(start)
 
 def read_data():
-    create_csv()
+    #create_csv()
     df = pd.read_csv("6-all.csv", dtype=int)
     datas = df.values
     return datas
