@@ -2,6 +2,7 @@
 from scraper import *
 
 import time
+import random
 
 import numpy as np
 import torch
@@ -16,6 +17,7 @@ def data_init():
     init_data=[]
     for row in data:
         init_row = [0]*43
+        
         for i in range(len(row)):
             if i == len(row)-1:
                 init_row[row[i]-1]=0
@@ -26,11 +28,17 @@ def data_init():
     return np.array(init_data)
 
 
+def init_weights(m):
+    if type(m) == nn.Linear:
+        torch.nn.init.xavier_uniform(m.weight)
+        m.bias.data.fill_(0.01)
+
+
 data= data_init()
 
 gakusyuu = 800
 
-X_data_size = 20
+X_data_size = 50
 hidden_size = X_data_size*70
 
 
@@ -72,27 +80,23 @@ net = nn.Sequential(
 net2 = nn.Sequential(
     nn.Linear(43*X_data_size, hidden_size),
     nn.ReLU(),
-    nn.Linear(hidden_size, X_data_size*100),
-    nn.ReLU(),
+    nn.Linear(hidden_size, hidden_size*3),
+    nn.RReLU(),
     
     nn.Dropout(0.3),
-    nn.Linear(X_data_size*100, X_data_size*100),
-    nn.ReLU(),
+    nn.Linear(hidden_size*3, hidden_size*3),
+    nn.Tanh(),
+    nn.Dropout(0.2),
+    nn.Linear(hidden_size*3, hidden_size*2),
+    nn.Tanh(),
     nn.Dropout(0.3),
-    nn.Linear(X_data_size*100, X_data_size*200),
-    nn.ReLU(),
-    nn.Linear(X_data_size*200, X_data_size*200),
-    nn.ReLU(),
-    nn.Linear(X_data_size*200, X_data_size*200),
-    nn.ReLU(),
+    nn.Linear(hidden_size*2, hidden_size),
+    nn.RReLU(),
     nn.Dropout(0.3),
-    nn.Linear(X_data_size*200, X_data_size*100),
-    nn.ReLU(),
+    nn.Linear(hidden_size, hidden_size),
+    nn.Hardtanh(),
     nn.Dropout(0.3),
-    nn.Linear(X_data_size*100, X_data_size*100),
-    nn.ReLU(),
-    nn.Dropout(0.3),
-    nn.Linear(X_data_size*100, hidden_size),
+    nn.Linear(hidden_size, hidden_size),
     nn.Softsign(),
     
     
@@ -100,25 +104,23 @@ net2 = nn.Sequential(
     nn.Linear(hidden_size, hidden_size),
     nn.PReLU(),
     nn.Dropout(0.3),
-    nn.Linear(hidden_size, hidden_size),
+    nn.Linear(hidden_size, X_data_size*10),
+    nn.PReLU(),
+    nn.Dropout(0.3),
+    nn.Linear(X_data_size*10, X_data_size*10),
     nn.ReLU(),
     nn.Dropout(0.3),
-    nn.Linear(hidden_size, hidden_size),
-    nn.ReLU(),
-    nn.Dropout(0.3),
-    nn.Linear(hidden_size, 300),
+    nn.Linear(X_data_size*10, 300),
     nn.Tanh(),
     
     nn.Dropout(0.3),
     nn.Linear(300, 100),
     nn.Hardtanh(),
     nn.Dropout(0.3),
-    nn.Linear(100, 80),
+    nn.Linear(100, 50),
     nn.ReLU(),
-    nn.Linear(80, 50),
-    nn.Tanh(),
     nn.Linear(50, 43),
-    nn.Softmax()
+    nn.Sigmoid()
     )
 
 waru =1
@@ -137,6 +139,7 @@ def yosou(net, X, Y):
     X = X.to("cuda:0")
     Y = Y.to("cuda:0")
     net = net.to("cuda:0")
+    net.apply(init_weights)
 
 
     loss_fn = nn.MSELoss()
@@ -146,8 +149,9 @@ def yosou(net, X, Y):
     losses = []
     net.train()
     
-    for i in range(3):
-        for epoch in range(len(X)-X_data_size):
+    for i in range(1):
+        for epoch in range(len(X)-X_data_size-1):
+            
             start = time.time()
             
             optimizer.zero_grad()
@@ -155,16 +159,16 @@ def yosou(net, X, Y):
             in_data = X[epoch:epoch+X_data_size].reshape(-1)
             
             y_pred = net(in_data/waru)
-            y_pred = y_pred*6
-        
+            #y_pred = y_pred/max(y_pred)
 
-            loss = torch.mean((Y[epoch+X_data_size].reshape(-1) - y_pred.reshape(-1))**2)
+            loss = torch.mean((Y[epoch+X_data_size+1].reshape(-1) - y_pred.reshape(-1))**2)
             #loss = loss_fn(Y[epoch+X_data_size].float(), y_pred/max(y_pred))
             loss.backward()
             losses.append(loss.item())
             optimizer.step()
             if(epoch%10 == 0):
                 print("step "+ str(epoch)+ "/"+str(len(X)-X_data_size)+": "+str(loss.item())+ "/ time: "+str(int(time.time()-start))+"s")
+            
 
     plt.plot(losses)
 
@@ -174,8 +178,9 @@ def yosou(net, X, Y):
     in_data = X[-X_data_size:].reshape(-1)
     
     y_pred = net(in_data/waru)
+    
+    y_pred = y_pred/max(y_pred)
     print(y_pred)
-    y_pred = y_pred*6
     
 
     data = y_pred.to("cpu").detach().numpy()
@@ -186,6 +191,13 @@ def yosou(net, X, Y):
         yosou.append(tmp+1)
         data[tmp] = -1
     print(data)
+    
+    del X
+    del Y
+    del net
+    del y_pred
+    torch.cuda.empty_cache()
+    
     return yosou
 
 
@@ -197,8 +209,9 @@ step = 1000
 
 
 
-#for i in range(int(len(X)/(step/2))):
-for i in range(3):
+
+for i in range(23):
+    print(str(i)+"回")
     #print(str(i)+"/"+str(int(len(X)/(step/2)))+"回")
     #yosou_list.append(yosou(net2, X[start:start+gakusyuu], Y[start:start+gakusyuu]))
     yosou_list.append(yosou(net2, X, Y))
